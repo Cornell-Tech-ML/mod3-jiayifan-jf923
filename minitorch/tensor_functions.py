@@ -116,8 +116,9 @@ class Mul(Function):
     def backward(ctx: Context, grad_output: Tensor) -> Tuple[Tensor, Tensor]:  # noqa: D102
         # Implement for Task 2.4.
         a, b = ctx.saved_values
-        return grad_output.f.mul_zip(grad_output, b), grad_output.f.mul_zip(
-            grad_output, a
+        return (
+            grad_output.f.mul_zip(grad_output, b),
+            grad_output.f.mul_zip(grad_output, a),
         )
 
 
@@ -130,9 +131,8 @@ class Sigmoid(Function):
 
     @staticmethod
     def backward(ctx: Context, grad_output: Tensor) -> Tensor:  # noqa: D102
-        (a,) = ctx.saved_values
-        mul_func = grad_output.f.mul_zip
-        return mul_func(grad_output, a.f.add_zip(a, a.f.neg_map(mul_func(a, a))))
+        sigma: Tensor = ctx.saved_values[0]
+        return sigma * (-sigma + 1.0) * grad_output
 
 
 class ReLU(Function):
@@ -187,24 +187,25 @@ class Sum(Function):
 class LT(Function):
     @staticmethod
     def forward(ctx: Context, a: Tensor, b: Tensor) -> Tensor:  # noqa: D102
-        ctx.save_for_backward(a, b)
+        ctx.save_for_backward(a.shape, b.shape)
         return a.f.lt_zip(a, b)
 
     @staticmethod
-    def backward(ctx: Context, grad_output: Tensor) -> Tuple[float, float]:  # noqa: D102
-        return 0.0, 0.0
+    def backward(ctx: Context, grad_output: Tensor) -> Tuple[Tensor, Tensor]:  # noqa: D102
+        a_shape, b_shape = ctx.saved_values
+        return zeros(a_shape), zeros(b_shape)
 
 
 class EQ(Function):
     @staticmethod
     def forward(ctx: Context, a: Tensor, b: Tensor) -> Tensor:  # noqa: D102
-        out = a.f.eq_zip(a, b)
-        ctx.save_for_backward(out)
-        return out
+        ctx.save_for_backward(a.shape, b.shape)
+        return a.f.eq_zip(a, b)
 
     @staticmethod
-    def backward(ctx: Context, grad_output: Tensor) -> Tuple[float, float]:  # noqa: D102
-        return 0.0, 0.0
+    def backward(ctx: Context, grad_output: Tensor) -> Tuple[Tensor, Tensor]:  # noqa: D102
+        a_shape, b_shape = ctx.saved_values
+        return zeros(a_shape), zeros(b_shape)
 
 
 class IsClose(Function):
@@ -216,17 +217,19 @@ class IsClose(Function):
 class Permute(Function):
     @staticmethod
     def forward(ctx: Context, a: Tensor, order: Tensor) -> Tensor:  # noqa: D102
-        order_list = [int(order[i]) for i in range(order.shape[0])]
-        ctx.save_for_backward(order_list)
-        return a._new(a._tensor.permute(*order_list))
+        ctx.save_for_backward(order)
+        return a._new(a._tensor.permute(*[int(order[i]) for i in range(order.size)]))
 
     @staticmethod
     def backward(ctx: Context, grad_output: Tensor) -> Tuple[Tensor, float]:  # noqa: D102
-        (order_list,) = ctx.saved_values
-        original_order = np.argsort(order_list)
-        for index, i in enumerate(order_list):
-            original_order[i] = index
-        return grad_output._new(grad_output._tensor.permute(*original_order)), 0.0
+        order: Tensor = ctx.saved_values[0]
+        order2: List[int] = [
+            a[0]
+            for a in sorted(
+                enumerate([order[i] for i in range(order.size)]), key=lambda a: a[1]
+            )
+        ]
+        return grad_output._new(grad_output._tensor.permute(*order2)), 0.0
 
 
 class View(Function):
