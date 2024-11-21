@@ -67,11 +67,17 @@ def to_index(ordinal: int, shape: Shape, out_index: OutIndex) -> None:
 
     """
     # TODO: Implement for Task 2.1.
-    strides = strides_from_shape(tuple(shape))
+    # strides = strides_from_shape(tuple(shape))
 
-    for i in range(len(shape)):
-        out_index[i] = ordinal // strides[i]
-        ordinal %= strides[i]
+    # for i in range(len(shape)):
+    #     out_index[i] = ordinal // strides[i]
+    #     ordinal %= strides[i]
+    cur_ord = ordinal + 0
+    
+    for i in range(len(shape) - 1, -1, -1):
+        sh = shape[i]
+        out_index[i] = int(cur_ord % sh)
+        cur_ord = cur_ord // sh
 
 
 def broadcast_index(
