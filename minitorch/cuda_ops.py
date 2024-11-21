@@ -29,11 +29,35 @@ FakeCUDAKernel = Any
 Fn = TypeVar("Fn")
 
 
-def device_jit(fn: Fn, **kwargs) -> Fn:
+def device_jit(fn: Fn, **kwargs: Any) -> Fn:
+    """JIT compile a function for execution on the device.
+
+    Args:
+    ----
+        fn: The function to be compiled.
+        **kwargs: Additional arguments for the JIT compiler.
+
+    Returns:
+    -------
+        The JIT-compiled function.
+
+    """
     return _jit(device=True, **kwargs)(fn)  # type: ignore
 
 
-def jit(fn, **kwargs) -> FakeCUDAKernel:
+def jit(fn: Fn, **kwargs: Any) -> FakeCUDAKernel:
+    """JIT compile a function.
+
+    Args:
+    ----
+        fn: The function to be compiled.
+        **kwargs: Additional arguments for the JIT compiler.
+
+    Returns:
+    -------
+        The JIT-compiled function.
+
+    """
     return _jit(**kwargs)(fn)  # type: ignore
 
 
@@ -280,7 +304,7 @@ def _sum_practice(out: Storage, a: Storage, size: int) -> None:
             cache[pos] += cache[pos + stride]
         cuda.syncthreads()
         stride //= 2
-    
+
     if pos == 0:
         out[cuda.blockIdx.x] = cache[0]
 
@@ -289,6 +313,17 @@ jit_sum_practice = cuda.jit()(_sum_practice)
 
 
 def sum_practice(a: Tensor) -> TensorData:
+    """Compute the sum of elements in a tensor.
+
+    Args:
+    ----
+        a (Tensor): The input tensor to sum.
+
+    Returns:
+    -------
+        TensorData: A tensor containing the sum of the input tensor's elements.
+
+    """
     (size,) = a.shape
     threadsperblock = THREADS_PER_BLOCK
     blockspergrid = (size // THREADS_PER_BLOCK) + 1
@@ -339,13 +374,13 @@ def tensor_reduce(
 
         if block_id >= out_size:
             return
-        
+
         to_index(block_id, out_shape, out_index)
         out_pos = index_to_position(out_index, out_strides)
 
         for d in range(len(out_shape)):
             a_index[d] = out_index[d]
-        
+
         a_index[reduce_dim] = 0
         reduce_size = a_shape[reduce_dim]
 
@@ -432,6 +467,18 @@ jit_mm_practice = jit(_mm_practice)
 
 
 def mm_practice(a: Tensor, b: Tensor) -> TensorData:
+    """Compute the matrix multiplication of two tensors.
+
+    Args:
+    ----
+        a (Tensor): The first input tensor.
+        b (Tensor): The second input tensor.
+
+    Returns:
+    -------
+        TensorData: A tensor containing the result of the matrix multiplication.
+
+    """
     (size, _) = a.shape
     threadsperblock = (THREADS_PER_BLOCK, THREADS_PER_BLOCK)
     blockspergrid = 1
@@ -500,19 +547,27 @@ def _tensor_matrix_multiply(
 
     for k in range(tiles):
         if i < a_shape[0] and (k * BLOCK_DIM + pi) < a_shape[-1]:
-            a_index = batch * a_batch_stride + i * a_strides[-2] + (k * BLOCK_DIM + pj) * a_strides[-1]
+            a_index = (
+                batch * a_batch_stride
+                + i * a_strides[-2]
+                + (k * BLOCK_DIM + pj) * a_strides[-1]
+            )
             a_shared[pi, pj] = a_storage[a_index]
         else:
             a_shared[pi, pj] = 0.0
-        
+
         if j < b_shape[-1] and (k * BLOCK_DIM + pj) < b_shape[0]:
-            b_index = batch * b_batch_stride + (k * BLOCK_DIM + pi) * b_strides[-2] + j * b_strides[-1]
+            b_index = (
+                batch * b_batch_stride
+                + (k * BLOCK_DIM + pi) * b_strides[-2]
+                + j * b_strides[-1]
+            )
             b_shared[pi, pj] = b_storage[b_index]
         else:
             b_shared[pi, pj] = 0.0
-        
+
         cuda.syncthreads()
-    
+
         for n in range(BLOCK_DIM):
             if (k * BLOCK_DIM + k) < a_shape[-1]:
                 acc += a_shared[pi, n] * b_shared[n, pj]
@@ -520,11 +575,7 @@ def _tensor_matrix_multiply(
         cuda.syncthreads()
 
     if i < out_shape[-2] and j < out_shape[-1]:
-        out_pos = (
-            batch * out_strides[0]
-            + i * out_strides[-2]
-            + j * out_strides[-1]
-        )
+        out_pos = batch * out_strides[0] + i * out_strides[-2] + j * out_strides[-1]
         out[out_pos] = acc
 
 

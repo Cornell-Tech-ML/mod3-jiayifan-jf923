@@ -7,7 +7,6 @@ from numba import prange
 from numba import njit as _njit
 
 from .tensor_data import (
-    MAX_DIMS,
     broadcast_index,
     index_to_position,
     shape_broadcast,
@@ -19,7 +18,7 @@ if TYPE_CHECKING:
     from typing import Callable, Optional
 
     from .tensor import Tensor
-    from .tensor_data import Index, Shape, Storage, Strides
+    from .tensor_data import Shape, Storage, Strides
 
 # TIP: Use `NUMBA_DISABLE_JIT=1 pytest tests/ -m task3_1` to run these tests without JIT.
 
@@ -30,6 +29,18 @@ Fn = TypeVar("Fn")
 
 
 def njit(fn: Fn, **kwargs: Any) -> Fn:
+    """JIT compile a function with optional arguments.
+
+    Args:
+    ----
+        fn: The function to be JIT compiled.
+        **kwargs: Additional keyword arguments for the JIT compiler.
+
+    Returns:
+    -------
+        The JIT compiled function.
+
+    """
     return _njit(inline="always", **kwargs)(fn)  # type: ignore
 
 
@@ -172,10 +183,12 @@ def tensor_map(
         # raise NotImplementedError("Need to implement for Task 3.1")
         out_size = int(np.prod(out_shape))
 
-        if np.array_equal(out_strides, in_strides) and np.array_equal(out_shape, in_shape):
+        if np.array_equal(out_strides, in_strides) and np.array_equal(
+            out_shape, in_shape
+        ):
             for i in prange(out_size):
                 out[i] = fn(in_storage[i])
-        
+
         else:
             out_index = np.zeros(len(out_shape), dtype=np.int32)
             in_index = np.zeros(len(in_shape), dtype=np.int32)
@@ -228,18 +241,17 @@ def tensor_zip(
         out_size = int(np.prod(out_shape))
 
         can_use_direct_indexing = (
-            np.array_equal(out_strides, a_strides) and
-            np.array_equal(a_strides, b_strides) and
-            np.array_equal(out_shape, a_shape) and
-            np.array_equal(a_shape, b_shape)
+            np.array_equal(out_strides, a_strides)
+            and np.array_equal(a_strides, b_strides)
+            and np.array_equal(out_shape, a_shape)
+            and np.array_equal(a_shape, b_shape)
         )
 
         if can_use_direct_indexing:
             for i in prange(out_size):
                 out[i] = fn(a_storage[i], b_storage[i])
-        
+
         else:
-            
             for i in prange(out_size):
                 out_index = np.zeros(len(out_shape), dtype=np.int32)
                 a_index = np.zeros(len(a_shape), dtype=np.int32)
@@ -252,19 +264,6 @@ def tensor_zip(
                 a_pos = index_to_position(a_index, a_strides)
                 b_pos = index_to_position(b_index, b_strides)
                 out[out_pos] = fn(a_storage[a_pos], b_storage[b_pos])
-            
-            """
-                a_index = np.zeros(len(a_shape), dtype=np.int32)
-                b_index = np.zeros(len(b_shape), dtype=np.int32)
-                out_index = np.zeros(len(out_shape), dtype=np.int32)
-                to_index(i, out_shape, out_index)
-                broadcast_index(out_index, out_shape, a_shape, a_index)
-                broadcast_index(out_index, out_shape, b_shape, b_index)
-                a_pos = index_to_position(a_index, a_strides)
-                b_pos = index_to_position(b_index, b_strides)
-                out_pos = index_to_position(out_index, out_strides)
-                out[out_pos] = fn(a_storage[a_pos], b_storage[b_pos])
-            """
 
     return njit(_zip, parallel=True)  # type: ignore
 
@@ -311,9 +310,9 @@ def tensor_reduce(
             for s in range(reduce_size):
                 out_index[reduce_dim] = s
                 j = index_to_position(out_index, a_strides)
-                
+
                 out[i] = fn(out[i], a_storage[j])
-        
+
     return njit(_reduce, parallel=True)  # type: ignore
 
 
