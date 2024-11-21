@@ -73,7 +73,7 @@ def to_index(ordinal: int, shape: Shape, out_index: OutIndex) -> None:
     #     out_index[i] = ordinal // strides[i]
     #     ordinal %= strides[i]
     cur_ord = ordinal + 0
-    
+
     for i in range(len(shape) - 1, -1, -1):
         sh = shape[i]
         out_index[i] = int(cur_ord % sh)

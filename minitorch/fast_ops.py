@@ -190,9 +190,9 @@ def tensor_map(
                 out[i] = fn(in_storage[i])
 
         else:
-            out_index = np.zeros(len(out_shape), dtype=np.int32)
-            in_index = np.zeros(len(in_shape), dtype=np.int32)
             for i in prange(out_size):
+                out_index = np.zeros(len(out_shape), dtype=np.int32)
+                in_index = np.zeros(len(in_shape), dtype=np.int32)
                 to_index(i, out_shape, out_index)
                 broadcast_index(out_index, out_shape, in_shape, in_index)
                 in_pos = index_to_position(in_index, in_strides)
