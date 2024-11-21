@@ -369,38 +369,46 @@ def tensor_reduce(
 
         # TODO: Implement for Task 3.3.
         # raise NotImplementedError("Need to implement for Task 3.3")
-        block_id = cuda.blockIdx.x
-        a_index = cuda.local.array(MAX_DIMS, numba.int32)
-
-        if block_id >= out_size:
+        if out_pos >= out_size:
             return
 
-        to_index(block_id, out_shape, out_index)
-        out_pos = index_to_position(out_index, out_strides)
+        s = a_shape[reduce_dim]  # Size along the reduction dimension
 
-        for d in range(len(out_shape)):
-            a_index[d] = out_index[d]
+        # Convert the output position to a multidimensional index
+        to_index(out_pos, out_shape, out_index)
 
-        reduce_size = a_shape[reduce_dim]
-        acc = reduce_value
+        # For reduction, set the index along the reduce_dim to the thread's position
+        out_index[reduce_dim] = pos
 
-        for idx in range(pos, reduce_size, BLOCK_DIM):
-            a_index[reduce_dim] = idx
-            a_pos = index_to_position(a_index, a_strides)
-            val = a_storage[a_pos]
-            acc = fn(acc, val)
+        # Initialize an index array for the input tensor
+        a_index = cuda.local.array(MAX_DIMS, numba.int32)
+        for i in range(len(out_shape)):
+            a_index[i] = out_index[i]
 
-        cache[pos] = acc
+        # Load data into shared memory cache
+        if pos < s:
+            # Calculate the position in the input storage
+            j = index_to_position(out_index, a_strides)
+            # Load the input value into the cache
+            cache[pos] = a_storage[j]
+        else:
+            # If the thread's position exceeds the size along reduce_dim, use reduce_value
+            cache[pos] = reduce_value
+
+        # Synchronize threads to ensure all data is loaded into cache
         cuda.syncthreads()
 
-        # Perform parallel reduction in shared memory
-        stride = BLOCK_DIM // 2
+        # Perform parallel reduction within the block
+        stride = BLOCK_DIM // 2  # Initial stride for reduction
         while stride > 0:
             if pos < stride:
+                # Combine elements pairwise using the reduction function
                 cache[pos] = fn(cache[pos], cache[pos + stride])
+            # Synchronize threads before next reduction step
             cuda.syncthreads()
-            stride //= 2
+            stride //= 2  # Halve the stride each iteration
 
+        # Thread 0 writes the result to the output storage
         if pos == 0:
             out[out_pos] = cache[0]
 
