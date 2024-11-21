@@ -381,13 +381,10 @@ def tensor_reduce(
         for d in range(len(out_shape)):
             a_index[d] = out_index[d]
 
-        a_index[reduce_dim] = 0
         reduce_size = a_shape[reduce_dim]
+        acc = reduce_value
 
-        a_pos = index_to_position(a_index, a_strides)
-        acc = a_storage[a_pos]
-
-        for idx in range(pos + 1, reduce_size, BLOCK_DIM):
+        for idx in range(pos, reduce_size, BLOCK_DIM):
             a_index[reduce_dim] = idx
             a_pos = index_to_position(a_index, a_strides)
             val = a_storage[a_pos]
@@ -396,6 +393,7 @@ def tensor_reduce(
         cache[pos] = acc
         cuda.syncthreads()
 
+        # Perform parallel reduction in shared memory
         stride = BLOCK_DIM // 2
         while stride > 0:
             if pos < stride:
@@ -404,10 +402,9 @@ def tensor_reduce(
             stride //= 2
 
         if pos == 0:
-            out_pos = index_to_position(out_index, out_strides)
             out[out_pos] = cache[0]
 
-    return jit(_reduce)  # type: ignore
+    return cuda.jit()(_reduce)  # type: ignore
 
 
 def _mm_practice(out: Storage, a: Storage, b: Storage, size: int) -> None:
