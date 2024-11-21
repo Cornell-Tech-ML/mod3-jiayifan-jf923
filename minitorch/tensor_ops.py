@@ -369,13 +369,11 @@ def tensor_zip(
 
         for i in range(size):
             to_index(i, out_shape, out_index)  # out_index is an ndarray
-            broadcast_index(out_index, out_shape, a_shape, a_index)  # Use ndarray
-            broadcast_index(out_index, out_shape, b_shape, b_index)
-
             out_pos = index_to_position(out_index, out_strides)
+            broadcast_index(out_index, out_shape, a_shape, a_index)  # Use ndarray
             a_pos = index_to_position(a_index, a_strides)
+            broadcast_index(out_index, out_shape, b_shape, b_index)
             b_pos = index_to_position(b_index, b_strides)
-
             out[out_pos] = fn(a_storage[a_pos], b_storage[b_pos])
 
     return _zip
@@ -410,18 +408,14 @@ def tensor_reduce(
     ) -> None:
         # Initialize index buffers as NumPy arrays
         out_index = np.zeros(len(out_shape), dtype=np.int32)
-        a_index = np.zeros(len(a_shape), dtype=np.int32)
-
+        reduce_size = a_shape[reduce_dim]
         for i in range(len(out)):
             to_index(i, out_shape, out_index)  # Use ndarray
             pos_out = index_to_position(out_index, out_strides)
-
-            for j in range(a_shape[reduce_dim]):
-                a_index[:] = out_index  # Copy content between ndarrays
-                a_index[reduce_dim] = j
-
-                pos_a = index_to_position(a_index, a_strides)
-                out[pos_out] = fn(out[pos_out], a_storage[pos_a])
+            for j in range(reduce_size):
+                out_index[reduce_dim] = j
+                k = index_to_position(out_index, a_strides)
+                out[pos_out] = fn(out[pos_out], a_storage[k])
 
     return _reduce
 

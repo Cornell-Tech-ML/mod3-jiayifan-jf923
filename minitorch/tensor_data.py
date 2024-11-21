@@ -102,28 +102,12 @@ def broadcast_index(
 
     """
     # TODO: Implement for Task 2.2.
-    big_dims = len(big_shape)
-    small_dims = len(shape)
-
-    # Initialize out_index with zeros to ensure safe indexing
-    for i in range(len(out_index)):
-        out_index[i] = 0
-
-    # Align dimensions from the end (right) for broadcasting
-    for i in range(1, small_dims + 1):
-        if shape[-i] == 1:
-            # If the smaller shape's dimension is 1, broadcast it to 0
-            out_index[-i] = 0
+    for i, s in enumerate(shape):
+        if s > 1:
+            out_index[i] = big_index[i + (len(big_shape) - len(shape))]
         else:
-            # Copy the corresponding index from the big tensor
-            out_index[-i] = big_index[-i]
-
-    # Any extra dimensions in `big_shape` are ignored or mapped to 0
-    # Ensure we don't attempt to assign outside `out_index` range.
-    for i in range(small_dims + 1, big_dims + 1):
-        # This block only applies if the bigger tensor has more dimensions
-        if i <= len(out_index):
-            out_index[-i] = 0  # Safe mapping for extra dimensions.
+            out_index[i] = 0
+        return None
 
 
 def shape_broadcast(shape1: UserShape, shape2: UserShape) -> UserShape:
@@ -144,23 +128,23 @@ def shape_broadcast(shape1: UserShape, shape2: UserShape) -> UserShape:
 
     """
     # TODO: Implement for Task 2.2.
-    # Align shapes from the last dimension backwards
-    len1, len2 = len(shape1), len(shape2)
-    max_len = max(len1, len2)
-
-    # Initialize the result shape with zeros
-    result_shape = [0] * max_len
-
-    for i in range(1, max_len + 1):
-        dim1 = shape1[-i] if i <= len1 else 1  # Use 1 if shape1 is shorter
-        dim2 = shape2[-i] if i <= len2 else 1  # Use 1 if shape2 is shorter
-
-        if dim1 == dim2 or dim1 == 1 or dim2 == 1:
-            result_shape[-i] = max(dim1, dim2)
+    a, b = shape1, shape2
+    m = max(len(a), len(b))
+    c_rev = [0] * m
+    a_rev = list(reversed(a))
+    b_rev = list(reversed(b))
+    for i in range(m):
+        if i >= len(a):
+            c_rev[i] = b_rev[i]
+        elif i >= len(b):
+            c_rev[i] = a_rev[i]
         else:
-            raise IndexingError(f"Cannot broadcast dimensions {dim1} and {dim2}")
-
-    return tuple(result_shape)
+            c_rev[i] = max(a_rev[i], b_rev[i])
+            if a_rev[i] != c_rev[i] and a_rev[i] != 1:
+                raise IndexingError(f"Broadcast failure {a} {b}")
+            if b_rev[i] != c_rev[i] and b_rev[i] != 1:
+                raise IndexingError(f"Broadcast failure {a} {b}")
+    return tuple(reversed(c_rev))
 
 
 def strides_from_shape(shape: UserShape) -> UserStrides:
