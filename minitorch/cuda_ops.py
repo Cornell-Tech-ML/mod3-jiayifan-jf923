@@ -526,28 +526,18 @@ def _tensor_matrix_multiply(
     """
     a_batch_stride = a_strides[0] if a_shape[0] > 1 else 0
     b_batch_stride = b_strides[0] if b_shape[0] > 1 else 0
-    # Batch dimension - fixed
     batch = cuda.blockIdx.z
 
     BLOCK_DIM = 32
     a_shared = cuda.shared.array((BLOCK_DIM, BLOCK_DIM), numba.float64)
     b_shared = cuda.shared.array((BLOCK_DIM, BLOCK_DIM), numba.float64)
 
-    # The final position c[i, j]
-    i = cuda.blockIdx.x * cuda.blockDim.x + cuda.threadIdx.x
-    j = cuda.blockIdx.y * cuda.blockDim.y + cuda.threadIdx.y
+    i = cuda.blockIdx.y * cuda.blockDim.y + cuda.threadIdx.y
+    j = cuda.blockIdx.x * cuda.blockDim.x + cuda.threadIdx.x
 
-    # The local position in the block.
-    pi = cuda.threadIdx.x
-    pj = cuda.threadIdx.y
+    pi = cuda.threadIdx.y
+    pj = cuda.threadIdx.x
 
-    # Code Plan:
-    # 1) Move across shared dimension by block dim.
-    #    a) Copy into shared memory for a matrix.
-    #    b) Copy into shared memory for b matrix
-    #    c) Compute the dot produce for position c[i, j]
-    # TODO: Implement for Task 3.4.
-    # raise NotImplementedError("Need to implement for Task 3.4")
     total = 0.0
 
     for block in range(0, a_shape[2], BLOCK_DIM):
@@ -561,14 +551,14 @@ def _tensor_matrix_multiply(
         b_k = block + pi
         if b_k < b_shape[1] and j < b_shape[2]:
             b_i = (batch * b_batch_stride) + (b_strides[1] * b_k) + (b_strides[2] * j)
-            b_shared[pj, pi] = b_storage[b_i]
+            b_shared[pi, pj] = b_storage[b_i]
         else:
-            b_shared[pj, pi] = 0.0
+            b_shared[pi, pj] = 0.0
 
         cuda.syncthreads()
 
-        for k in range(0, BLOCK_DIM):
-            if (k + block) < a_shape[2]:
+        for k in range(BLOCK_DIM):
+            if (block + k) < a_shape[2]:
                 total += a_shared[pi, k] * b_shared[k, pj]
 
         cuda.syncthreads()
