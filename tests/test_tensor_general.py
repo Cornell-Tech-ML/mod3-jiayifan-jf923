@@ -232,6 +232,8 @@ if numba.cuda.is_available():
         y = minitorch.tensor(y1, backend=shared["cuda"])
         z2 = x @ y
 
+        print("x1", x1)
+        print("y1", y1)
         print("z", z)
         print("z2", z2)
         for i in range(2):
