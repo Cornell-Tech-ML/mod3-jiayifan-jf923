@@ -528,45 +528,49 @@ def _tensor_matrix_multiply(
     b_batch_stride = b_strides[0] if b_shape[0] > 1 else 0
     batch = cuda.blockIdx.z
 
-    BLOCK_DIM = 16
-    a_shared = cuda.shared.array((BLOCK_DIM, BLOCK_DIM), numba.float64)
-    b_shared = cuda.shared.array((BLOCK_DIM, BLOCK_DIM), numba.float64)
+    BLOCK_DIM = 32
+
+    a_shared = cuda.shared.array((BLOCK_DIM, BLOCK_DIM), numba.float32)
+    b_shared = cuda.shared.array((BLOCK_DIM, BLOCK_DIM), numba.float32)
 
     tx = cuda.threadIdx.x
     ty = cuda.threadIdx.y
     row = cuda.blockIdx.y * BLOCK_DIM + ty
     col = cuda.blockIdx.x * BLOCK_DIM + tx
 
-    total = 0.0
+    if batch >= out_shape[0]:
+        return
+
+    total = numba.float32(0.0)
 
     num_blocks = (a_shape[2] + BLOCK_DIM - 1) // BLOCK_DIM
 
     for block in range(num_blocks):
-        a_k = block * BLOCK_DIM + tx
-        b_k = block * BLOCK_DIM + ty
-
-        if row < a_shape[1] and a_k < a_shape[2]:
-            a_i = batch * a_batch_stride + row * a_strides[1] + a_k * a_strides[2]
-            a_shared[ty, tx] = a_storage[a_i]
+        a_col = block * BLOCK_DIM + tx
+        if row < a_shape[1] and a_col < a_shape[2]:
+            a_idx = batch * a_batch_stride + row * a_strides[1] + a_col * a_strides[2]
+            a_shared[ty, tx] = a_storage[a_idx]
         else:
             a_shared[ty, tx] = 0.0
 
-        if b_k < b_shape[1] and col < b_shape[2]:
-            b_i = batch * b_batch_stride + b_k * b_strides[1] + col * b_strides[2]
-            b_shared[ty, tx] = b_storage[b_i]
+        b_row = block * BLOCK_DIM + ty
+        if b_row < b_shape[1] and col < b_shape[2]:
+            b_idx = batch * b_batch_stride + b_row * b_strides[1] + col * b_strides[2]
+            b_shared[ty, tx] = b_storage[b_idx]
         else:
             b_shared[ty, tx] = 0.0
 
         cuda.syncthreads()
 
         for k in range(BLOCK_DIM):
-            total += a_shared[ty, k] * b_shared[k, tx]
+            if (block * BLOCK_DIM + k) < a_shape[2]:
+                total += a_shared[ty, k] * b_shared[k, tx]
 
         cuda.syncthreads()
 
     if row < out_shape[1] and col < out_shape[2]:
-        out_pos = batch * out_strides[0] + row * out_strides[1] + col * out_strides[2]
-        out[out_pos] = total
+        out_idx = batch * out_strides[0] + row * out_strides[1] + col * out_strides[2]
+        out[out_idx] = total
 
 
 tensor_matrix_multiply = jit(_tensor_matrix_multiply)
