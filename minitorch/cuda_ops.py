@@ -555,17 +555,23 @@ def _tensor_matrix_multiply(
         if i < a_shape[1] and a_k < a_shape[2]:
             a_i = (batch * a_batch_stride) + (a_strides[1] * i) + (a_strides[2] * a_k)
             a_shared[pi, pj] = a_storage[a_i]
+        else:
+            a_shared[pi, pj] = 0.0
 
         b_k = block + pi
         if b_k < b_shape[1] and j < b_shape[2]:
             b_i = (batch * b_batch_stride) + (b_strides[1] * b_k) + (b_strides[2] * j)
-            b_shared[pi, pj] = b_storage[b_i]
+            b_shared[pj, pi] = b_storage[b_i]
+        else:
+            b_shared[pj, pi] = 0.0
 
         cuda.syncthreads()
 
         for k in range(0, BLOCK_DIM):
             if (k + block) < a_shape[2]:
                 total += a_shared[pi, k] * b_shared[k, pj]
+
+        cuda.syncthreads()
 
     if i < out_shape[1] and j < out_shape[2]:
         out_pos = (out_strides[0] * batch) + (out_strides[1] * i) + (out_strides[2] * j)
