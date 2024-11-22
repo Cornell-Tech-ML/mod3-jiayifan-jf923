@@ -524,48 +524,76 @@ def _tensor_matrix_multiply(
     Returns:
         None : Fills in `out`
     """
-    a_batch_stride = a_strides[0] if a_shape[0] > 1 else 0
-    b_batch_stride = b_strides[0] if b_shape[0] > 1 else 0
+    out_size = 1
+    for sz in out_shape:
+        out_size *= sz
+    out_bbatch_stride = out_strides[-4] if len(out_strides) >= 4 else out_size
+    out_bbatch_size = out_size // out_bbatch_stride
+    # Batch dimension - fixed, c[batch, i, j]
     batch = cuda.blockIdx.z
 
     BLOCK_DIM = 32
     a_shared = cuda.shared.array((BLOCK_DIM, BLOCK_DIM), numba.float64)
     b_shared = cuda.shared.array((BLOCK_DIM, BLOCK_DIM), numba.float64)
 
-    i = cuda.blockIdx.y * cuda.blockDim.y + cuda.threadIdx.y
-    j = cuda.blockIdx.x * cuda.blockDim.x + cuda.threadIdx.x
+    # The final position c[i, j]
+    i = cuda.blockIdx.x * cuda.blockDim.x + cuda.threadIdx.x
+    j = cuda.blockIdx.y * cuda.blockDim.y + cuda.threadIdx.y
 
-    pi = cuda.threadIdx.y
-    pj = cuda.threadIdx.x
+    # The local position in the block.
+    pi = cuda.threadIdx.x
+    pj = cuda.threadIdx.y
 
-    total = 0.0
+    # Code Plan:
+    # 1) Move across shared dimension by block dim.
+    #    a) Copy into shared memory for a matrix.
+    #    b) Copy into shared memory for b matrix
+    #    c) Compute the dot produce for position c[i, j]
+    # TODO: Implement for Task 3.4.
+    # raise NotImplementedError("Need to implement for Task 3.4")
+    out_index = cuda.local.array(MAX_DIMS, numba.int32)
+    a_index = cuda.local.array(MAX_DIMS, numba.int32)
+    b_index = cuda.local.array(MAX_DIMS, numba.int32)
+    out_dim = len(out_shape)
+    a_dim = len(a_shape)
+    b_dim = len(b_shape)
 
-    for block in range(0, a_shape[2], BLOCK_DIM):
-        a_k = block + pj
-        if i < a_shape[1] and a_k < a_shape[2]:
-            a_i = (batch * a_batch_stride) + (a_strides[1] * i) + (a_strides[2] * a_k)
-            a_shared[pi, pj] = a_storage[a_i]
-        else:
-            a_shared[pi, pj] = 0.0
-
-        b_k = block + pi
-        if b_k < b_shape[1] and j < b_shape[2]:
-            b_i = (batch * b_batch_stride) + (b_strides[1] * b_k) + (b_strides[2] * j)
-            b_shared[pi, pj] = b_storage[b_i]
-        else:
-            b_shared[pi, pj] = 0.0
-
-        cuda.syncthreads()
-
-        for k in range(BLOCK_DIM):
-            if (block + k) < a_shape[2]:
-                total += a_shared[pi, k] * b_shared[k, pj]
-
-        cuda.syncthreads()
-
-    if i < out_shape[1] and j < out_shape[2]:
-        out_pos = (out_strides[0] * batch) + (out_strides[1] * i) + (out_strides[2] * j)
-        out[out_pos] = total
+    dim_m = a_shape[-2]
+    dim_n = a_shape[-1]
+    dim_d = b_shape[-1]
+    if i >= dim_m and j >= dim_d:
+        return
+    out_pos_now = batch * out_strides[-3] + i * out_strides[-2] + j
+    for bbatch_i in range(out_bbatch_size):
+        to_index(
+            batch * out_strides[-3] + bbatch_i * out_bbatch_stride, out_shape, out_index
+        )
+        out_index[out_dim - 2] = i
+        out_index[out_dim - 1] = j
+        broadcast_index(out_index, out_shape, a_shape, a_index)
+        broadcast_index(out_index, out_shape, b_shape, b_index)
+        tmp = 0.0
+        for base_n in range(0, dim_n, BLOCK_DIM):
+            a_index[a_dim - 1] = base_n + pj
+            # a_c = b_c = 0
+            if a_index[a_dim - 1] < dim_n and i < dim_m:
+                # a_c = 344
+                a_pos = index_to_position(a_index, a_strides)
+                a_shared[pi, pj] = a_storage[a_pos]
+            b_index[b_dim - 2] = base_n + pi
+            if b_index[b_dim - 2] < dim_n and j < dim_d:
+                # b_c = 234
+                b_pos = index_to_position(b_index, b_strides)
+                b_shared[pi, pj] = b_storage[b_pos]
+            numba.cuda.syncthreads()
+            if i < dim_m and j < dim_d:
+                k_lim = min(BLOCK_DIM, dim_n - base_n)
+                for k in range(k_lim):
+                    tmp += a_shared[pi, k] * b_shared[k, pj]
+            numba.cuda.syncthreads()  # Note:!!!!!!!!!!!!!
+        if i < dim_m and j < dim_d and out_pos_now < out_size:
+            out[out_pos_now] = tmp
+        out_pos_now += out_bbatch_stride
 
 
 tensor_matrix_multiply = jit(_tensor_matrix_multiply)
